@@ -1,0 +1,118 @@
+package rules;
+
+import com.branch.model.AnnualReport;
+import java.util.Optional;
+
+rule "Set interest rate for Agriculture loan"
+when
+    $branch : AnnualReport(loanType != null && loanType.toLowerCase() == "agriculture")
+then
+    $branch.setInterestRate(10);
+    System.out.println("Interest rate for agriculture loan set to 10%");
+    update($branch);
+end
+
+rule "Set interest rate for Home loan"
+when
+    $branch : AnnualReport(loanType != null && loanType.toLowerCase() == "home")
+then
+    $branch.setInterestRate(15);
+    System.out.println("Interest rate for home loan set to 15%");
+    update($branch);
+end
+
+rule "Calculate Remaining Loan Balance"
+when
+    $report : AnnualReport(
+        loanAmountAllocated != null && !loanAmountAllocated.trim().isEmpty(),
+        loanAmountUsed != null && !loanAmountUsed.trim().isEmpty(),
+        loanType != null && (loanType.toLowerCase() == "home" || loanType.toLowerCase() == "agriculture")
+    )
+then
+    try {
+        // Convert and trim string amounts to double
+        double allocated = Double.parseDouble($report.getLoanAmountAllocated().trim());
+        double used = Double.parseDouble($report.getLoanAmountUsed().trim());
+        
+        // Calculate remaining balance
+        double remaining = Math.max(0, allocated - used);
+        
+        // Set the remaining balance
+        $report.setRemainingLoanBalance(String.format("%.2f", remaining));
+        
+        // Update the fact
+        update($report);
+        
+        System.out.println("Remaining loan balance calculated: " + remaining);
+    } catch (NumberFormatException e) {
+        System.err.println("Invalid number format in loan amounts: " + e.getMessage());
+    }
+end
+
+rule "Validate Loan Amounts"
+when
+    $report : AnnualReport(
+        loanAmountAllocated != null && !loanAmountAllocated.trim().isEmpty(),
+        loanAmountUsed != null && !loanAmountUsed.trim().isEmpty(),
+        remainingLoanBalance != null && !remainingLoanBalance.trim().isEmpty(),
+        loanType != null && (loanType.toLowerCase() == "home" || loanType.toLowerCase() == "agriculture")
+    )
+then
+    try {
+        double allocated = Double.parseDouble($report.getLoanAmountAllocated().trim());
+        double used = Double.parseDouble($report.getLoanAmountUsed().trim());
+        double remaining = Double.parseDouble($report.getRemainingLoanBalance().trim());
+        
+        // Validate used amount is not greater than allocated
+        if (used > allocated) {
+            throw new RuntimeException("Used amount cannot be greater than allocated amount");
+        }
+        
+        // Validate remaining is correct (with small epsilon for double comparison)
+        double epsilon = 0.01; // tolerance for double comparison
+        if (Math.abs((remaining + used) - allocated) > epsilon) {
+            throw new RuntimeException("Invalid amounts: Used + Remaining must equal Allocated amount");
+        }
+        
+        // Set validation status
+        $report.setValidationStatus("VALID");
+        update($report);
+        
+        System.out.println("Loan validation completed successfully");
+    } catch (NumberFormatException e) {
+        System.err.println("Invalid number format in loan amounts: " + e.getMessage());
+    }
+end
+
+// Other rules remain similar with added null checks and toLowerCase() comparisons
+rule "Validate Required Fields"
+when
+    $report : AnnualReport(
+        branch == null ||
+        year == null ||
+        loanType == null || loanType.trim().isEmpty(),
+        loanType != null && (loanType.toLowerCase() == "home" || loanType.toLowerCase() == "agriculture")
+    )
+then
+    throw new RuntimeException("Required fields (branch, year, and loan type) must be provided");
+end
+
+rule "Validate Year"
+when
+    $report : AnnualReport(
+        year != null,
+        year < 2000 || year > 2100
+    )
+then
+    throw new RuntimeException("Invalid year provided: " + $report.getYear());
+end
+
+rule "Validate Loan Type"
+when
+    $report : AnnualReport(
+        loanType != null,
+        !loanType.toLowerCase().matches("(home|agriculture)")
+    )
+then
+    throw new RuntimeException("Invalid loan type. Allowed types are: home, agriculture");
+end

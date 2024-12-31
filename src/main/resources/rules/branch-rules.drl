@@ -1,0 +1,18 @@
+package rules;
+import com.branch.model.Branch;
+
+rule "Set status for new branch"
+when
+    $branch : Branch(status == null)  // identifies new branches by checking if status is null
+then
+    $branch.setStatus("ACTIVE");
+    System.out.println("New branch status set to ACTIVE");
+end
+
+
+
+
+
+
+
+
